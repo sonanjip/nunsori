@@ -5,6 +5,8 @@ import com.lsa.app.data.db.ItemKind
 import com.lsa.app.data.db.ItemSummary
 import com.lsa.app.data.db.SegmentEntity
 import com.lsa.app.data.db.SegmentType
+import com.lsa.app.ml.embedding.Quant
+import com.lsa.app.search.KeywordMatcher
 import com.lsa.app.search.SearchEngine
 import com.lsa.app.search.SearchFilter
 import kotlinx.coroutines.runBlocking
@@ -28,6 +30,7 @@ interface IndexTool {
 object ToolNames {
     const val SEARCH = "search_index"
     const val READ = "read_file"
+    const val SEARCH_IN = "search_in_file"
     const val MOVE = "move_files"
     const val DELETE = "delete_files"
 }
@@ -177,6 +180,81 @@ class ReadFileTool(private val dao: ItemDao) : IndexTool {
                 o.put("next_offset", if (end < text.length) end else JSONObject.NULL)
                 o.put("text", slice.ifEmpty { if (text.isEmpty()) "(no indexed text for this file)" else "(offset is past the end)" })
             }
+        }
+    }
+}
+
+/**
+ * Searches inside one file: the passages of that file closest to a question, so a chat model reads only those instead
+ * of the whole (possibly huge) file. Semantic when the item's embeddings match the installed model, words otherwise.
+ */
+class SearchInFileTool(private val search: SearchEngine, private val dao: ItemDao) : IndexTool {
+    override val name = ToolNames.SEARCH_IN
+    override val description =
+        "Find the passages of ONE file (found with search_index) that best answer a question or match some words: returns the " +
+            "best few passages with their page or time. Use it for long documents, transcripts and recognized text instead of " +
+            "reading the whole file; read_file can then read around a passage."
+    override val parameters = """{"type":"object","properties":{
+        "item_id":{"type":"integer","description":"The item_id from search_index."},
+        "query":{"type":"string","description":"What to look for, as a question or a few words."},
+        "limit":{"type":"integer","description":"How many passages, 1-$MAX_HITS (default $DEFAULT_HITS)."}},
+        "required":["item_id","query"]}"""
+
+    override fun execute(args: JSONObject): String = runBlocking {
+        val id = args.optLong("item_id", -1)
+        val query = args.optString("query").trim()
+        if (id < 0) return@runBlocking "Error: item_id is required."
+        if (query.isEmpty()) return@runBlocking "Error: query is required."
+        val limit = args.optInt("limit", DEFAULT_HITS).coerceIn(1, MAX_HITS)
+        val item = dao.getItem(id) ?: return@runBlocking "Error: no file with item_id $id."
+        val segments = dao.segmentsOf(id)
+        val qv = runCatching { search.queryVector(query) }.getOrNull()?.takeIf { it.first == item.embeddingModelId }?.second
+        val hits = rank(segments, qv, query, limit)
+        val out = JSONArray()
+        for (h in hits) out.put(JSONObject().apply {
+            put("ordinal", h.segment.ordinal)
+            h.segment.page?.let { put("page", it) }
+            h.segment.startMs?.let { put("time", formatTime(it)) }
+            put("score", "%.2f".format(Locale.US, h.score))
+            put("text", clip(h.segment.text.orEmpty()))
+        })
+        JSONObject().put("item_id", id).put("name", item.displayName).put("kind", kindName(item.kind))
+            .put("method", if (qv != null) "semantic" else "words")
+            .put("total_passages", segments.count { it.isReadable() })
+            .also { o -> item.pageCount?.let { o.put("pages", it) } }
+            .put("passages", out)
+            .also { if (hits.isEmpty()) it.put("note", "Nothing in this file matches; try other words or read_file.") }
+            .toString()
+    }
+
+    data class Hit(val segment: SegmentEntity, val score: Float)
+
+    companion object {
+        const val DEFAULT_HITS = 3
+        const val MAX_HITS = 5
+        /** One passage as the model sees it (chunks are about 800 characters). */
+        const val PASSAGE_CHARS = 900
+
+        private fun SegmentEntity.isReadable() = !text.isNullOrBlank() &&
+            (type == SegmentType.TEXT_CHUNK || type == SegmentType.TRANSCRIPT || type == SegmentType.OCR_TEXT)
+
+        private fun clip(t: String) = t.trim().let { if (it.length > PASSAGE_CHARS) it.take(PASSAGE_CHARS) + "…" else it }
+
+        /**
+         * The best [limit] readable passages: by cosine to [qVec] when given (raw similarity: one file has no baseline to
+         * judge against), else by how many query words they contain. Passages come back in score order.
+         */
+        fun rank(segments: List<SegmentEntity>, qVec: FloatArray?, query: String, limit: Int): List<Hit> {
+            val readable = segments.filter { it.isReadable() }
+            if (qVec != null) {
+                val scored = readable.mapNotNull { s -> s.embedding?.takeIf { Quant.dim(it) == qVec.size }?.let { Hit(s, Quant.dot(qVec, it)) } }
+                if (scored.isNotEmpty()) return scored.sortedByDescending { it.score }.take(limit)
+            }
+            val tokens = KeywordMatcher.tokens(query)
+            if (tokens.isEmpty()) return emptyList()
+            return readable.mapNotNull { s ->
+                KeywordMatcher.match(s.text.orEmpty(), tokens, query)?.let { m -> Hit(s, m.count.toFloat() / tokens.size + if (m.exact) 1f else 0f) }
+            }.sortedByDescending { it.score }.take(limit)
         }
     }
 }

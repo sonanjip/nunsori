@@ -10,6 +10,7 @@ import com.lsa.app.service.tools.FileOps
 import com.lsa.app.service.tools.FilePrep
 import com.lsa.app.service.tools.PeopleDirectory
 import com.lsa.app.service.tools.ReadFileTool
+import com.lsa.app.service.tools.SearchInFileTool
 import com.lsa.app.service.tools.SearchIndexTool
 import com.lsa.app.service.tools.kindName
 import com.lsa.app.service.tools.parseKinds
@@ -46,6 +47,7 @@ class IndexApi(
     private val people = PeopleDirectory(faces)
     private val searchTool = SearchIndexTool(search, items, people)
     private val readTool = ReadFileTool(items)
+    private val searchInTool = SearchInFileTool(search, items)
 
     fun hello(clientJson: String): String {
         val api = runCatching { JSONObject(clientJson).optInt("api") }.getOrDefault(0)
@@ -56,6 +58,7 @@ class IndexApi(
     fun tools(): String = JSONArray().apply {
         put(spec(searchTool.name, searchTool.description, searchTool.parameters, false))
         put(spec(readTool.name, readTool.description, readTool.parameters, false))
+        put(spec(searchInTool.name, searchInTool.description, searchInTool.parameters, false))
         put(spec(MOVE, FileActionTools.MOVE_DESCRIPTION, FileActionTools.MOVE_PARAMETERS, true))
         put(spec(DELETE, FileActionTools.DELETE_DESCRIPTION, FileActionTools.DELETE_PARAMETERS, true))
     }.toString()
@@ -68,6 +71,7 @@ class IndexApi(
         return when (name) {
             searchTool.name -> searchTool.execute(args)
             readTool.name -> readTool.execute(args)
+            searchInTool.name -> searchInTool.execute(args)
             MOVE -> confirm(FileActionPrep.move(args, items, people), MOVE)
             DELETE -> confirm(FileActionPrep.delete(args, items, people), DELETE)
             else -> throw NunsoriErrors.encode(Nunsori.Errors.BAD_INPUT, "unknown tool $name")

@@ -85,6 +85,10 @@ class SearchEngine(
         var clipScore = 0f
     }
 
+    /** The query vector and the id of the embedding model it was made with, or null when no model is installed. */
+    suspend fun queryVector(query: String): Pair<String, FloatArray>? =
+        queryEmbedder(query)?.let { settings.embeddingModelId.first() to it }
+
     suspend fun search(query: String, filter: SearchFilter = SearchFilter(), limit: Int = 50): SearchResult {
         val q = query.trim()
         val kinds = filter.kinds.ifEmpty { ItemKind.entries.toSet() }.toList()
