@@ -45,7 +45,7 @@ Faces are found when photos are indexed (Settings › Index › *Group photos by
 
 ## Chat
 
-Since 0.10.0 the assistant chat is its own app, **Malbotdari** (말벗다리). It answers from this index: it searches and reads your files, shows their previews, proposes moving or deleting them (Nunsori does it after you approve the card there) and runs tasks when Nunsori indexes a matching file. **Chat** in the menu opens Malbotdari (or says where to get it); in Search, long-press results and choose **Ask in chat** to open a new Malbotdari chat with those files attached. Updating from an earlier Nunsori removes the chats, scheduled tasks and cards that were stored here.
+Since 0.10.0 the assistant chat is its own app, **Malbotdari** (말벗다리). It answers from this index: it searches and reads your files, shows their previews, proposes moving or deleting them (Nunsori does it after you approve the card there) and runs tasks when Nunsori indexes a matching file. **Chat** in the menu opens Malbotdari (or says where to get it); in Search, long-press results and choose **Ask in chat** to open a new Malbotdari chat with those files attached, or tap any file to ask from its detail sheet. Updating from an earlier Nunsori removes the chats, scheduled tasks and cards that were stored here.
 
 ## Settings
 

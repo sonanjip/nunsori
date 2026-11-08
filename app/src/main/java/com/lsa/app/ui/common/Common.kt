@@ -11,6 +11,7 @@ import android.text.format.Formatter
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -20,15 +21,17 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material3.Surface
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.OutlinedButton
@@ -42,7 +45,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
@@ -58,6 +64,7 @@ import com.lsa.app.data.db.ItemSummary
 import com.lsa.app.data.db.SegmentEntity
 import com.lsa.app.data.db.SegmentType
 import com.lsa.app.rememberContainer
+import com.lsa.app.service.Malbotdari
 
 @Composable
 fun Thumb(model: Any?, failed: Boolean, modifier: Modifier = Modifier, alignment: Alignment = Alignment.Center) {
@@ -131,6 +138,7 @@ fun ItemSummary.thumbModel(ctx: Context): Any = thumbModel(ctx, kind, uri, thumb
 fun ItemDetailSheet(itemId: Long, onDismiss: () -> Unit) {
     val container = rememberContainer()
     val ctx = LocalContext.current
+    var showMalbotDialog by remember { mutableStateOf(false) }
     val data by produceState<Pair<ItemEntity, List<SegmentEntity>>?>(null, itemId) {
         val dao = container.db.itemDao()
         value = dao.getItem(itemId)?.let { it to dao.segmentsOf(itemId) }
@@ -144,12 +152,20 @@ fun ItemDetailSheet(itemId: Long, onDismiss: () -> Unit) {
             val thumb = segments.firstNotNullOfOrNull { it.thumbPath }
             ItemThumb(e.kind, e.uri, thumb, e.displayName, e.status == ItemStatus.FAILED, Modifier.fillMaxWidth().height(if (thumb != null || e.kind == ItemKind.IMAGE) 280.dp else 96.dp))
             Text(e.title ?: e.displayName, style = MaterialTheme.typography.titleMedium)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { shareImage(ctx, Uri.parse(e.uri), e.mimeType) }) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = {
+                    if (!Malbotdari.open(ctx, listOf(e.itemId))) {
+                        if (!Malbotdari.isInstalled(ctx)) showMalbotDialog = true
+                    }
+                }) {
+                    Icon(Icons.Outlined.ChatBubbleOutline, null)
+                    Text(stringResource(R.string.chat_ask), Modifier.padding(start = 8.dp))
+                }
+                OutlinedButton(onClick = { shareImage(ctx, Uri.parse(e.uri), e.mimeType) }) {
                     Icon(Icons.Filled.Share, null); Text(stringResource(R.string.action_share), Modifier.padding(start = 8.dp))
                 }
                 OutlinedButton(onClick = { openImage(ctx, Uri.parse(e.uri), e.mimeType) }) {
-                    Icon(Icons.Filled.OpenInNew, null); Text(stringResource(R.string.action_open_with), Modifier.padding(start = 8.dp))
+                    Icon(Icons.AutoMirrored.Filled.OpenInNew, null); Text(stringResource(R.string.action_open_with), Modifier.padding(start = 8.dp))
                 }
             }
             Meta(stringResource(R.string.detail_path), e.folderKey.ifEmpty { "/" })
@@ -181,6 +197,22 @@ fun ItemDetailSheet(itemId: Long, onDismiss: () -> Unit) {
                 if (parts.size > 12) Text("… +${parts.size - 12}", style = MaterialTheme.typography.labelSmall)
             }
         }
+    }
+    if (showMalbotDialog) {
+        AlertDialog(
+            onDismissRequest = { showMalbotDialog = false },
+            title = { Text(stringResource(R.string.malbot_title)) },
+            text = { Text(stringResource(R.string.malbot_needed)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    Malbotdari.openReleases(ctx)
+                    showMalbotDialog = false
+                }) { Text(stringResource(R.string.malbot_get)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showMalbotDialog = false }) { Text(stringResource(R.string.action_cancel)) }
+            },
+        )
     }
 }
 
