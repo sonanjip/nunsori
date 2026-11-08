@@ -67,3 +67,5 @@ Final score = sum of the weighted signals + `AGREEMENT_BONUS` (0.15) × (number 
 ## Tuning
 
 Change the constants above, then re-run the real-model E2E ([development.md](development.md#testing)) with queries that should match and queries that should return nothing. Unit tests in `app/src/test` cover `Fusion` and keyword matching.
+
+`search_in_file(item_id, query, limit)` ranks readable passages within one item by raw cosine when the current embedding model matches, falling back to words otherwise. Up to five 500-character excerpts are returned with page/time references; `read_file` reads more. This is independent of whole-index result fusion.

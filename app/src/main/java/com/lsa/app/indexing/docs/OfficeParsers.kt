@@ -324,7 +324,7 @@ object OfficeParsers {
                         "table-cell", "covered-table-cell" -> if (tableDepth == 1) {
                             inCell = false
                             val t = cellText.toString().trim()
-                            repeat(if (t.isEmpty()) 1 else colRepeat.coerceAtMost(MAX_COLS)) { if (row.size < MAX_COLS) row += t }
+                            repeat(colRepeat.coerceIn(1, MAX_COLS)) { if (row.size < MAX_COLS) row += t }
                         }
                         "table-row" -> if (tableDepth == 1) {
                             while (row.isNotEmpty() && row.last().isBlank()) row.removeAt(row.size - 1)

@@ -33,6 +33,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Before
+import org.junit.Assert.assertFalse
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
@@ -79,7 +80,16 @@ class IndexApiTest {
     @Test fun toolsListSearchReadAndConfirmedFileActions() {
         val tools = JSONArray(api.tools())
         val byName = (0 until tools.length()).associate { tools.getJSONObject(it).let { t -> t.getString("name") to t.getBoolean("confirm") } }
-        assertEquals(mapOf("search_index" to false, "read_file" to false, "move_files" to true, "delete_files" to true), byName)
+        assertEquals(mapOf("search_index" to false, "read_file" to false, "search_in_file" to false, "move_files" to true, "delete_files" to true), byName)
+    }
+
+    @Test fun searchInsideOneFileDoesNotReadAnotherFile() {
+        val id = add("report.txt", "Launch code cobalt", 10)
+        add("other.txt", "Launch code orange", 11)
+        val found = JSONObject(api.runTool("search_in_file", """{"item_id":$id,"query":"cobalt"}"""))
+        assertTrue(found.toString().contains("cobalt"))
+        assertFalse(found.toString().contains("orange"))
+        assertEquals("words", found.getString("method"))
     }
 
     @Test fun searchAndReadLikeTheChatTools() {
@@ -146,7 +156,7 @@ class IndexApiTest {
         val info = client.info()
         assertEquals(Nunsori.API_VERSION, info.apiVersion)
         assertEquals(BuildConfig.VERSION_NAME, info.appVersion)
-        assertEquals(4, client.tools().size)
+        assertEquals(5, client.tools().size)
         client.disconnect()
     }
 }

@@ -233,7 +233,7 @@ class SearchInFileTool(private val search: SearchEngine, private val dao: ItemDa
         const val DEFAULT_HITS = 3
         const val MAX_HITS = 5
         /** One passage as the model sees it (chunks are about 800 characters). */
-        const val PASSAGE_CHARS = 900
+        const val PASSAGE_CHARS = 500
 
         private fun SegmentEntity.isReadable() = !text.isNullOrBlank() &&
             (type == SegmentType.TEXT_CHUNK || type == SegmentType.TRANSCRIPT || type == SegmentType.OCR_TEXT)

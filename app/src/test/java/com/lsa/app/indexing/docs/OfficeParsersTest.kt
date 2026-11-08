@@ -132,6 +132,12 @@ class OfficeParsersTest {
         assertEquals(listOf("Title slide", "Second"), d.units.map { it.label }); assertEquals(listOf(1, 2), d.units.map { it.page })
     }
 
+    @Test fun repeatedEmptyCellsKeepTheFollowingColumn() {
+        val body = "<table:table table:name=\"Sheet\"><table:table-row><table:table-cell table:number-columns-repeated=\"3\"/><table:table-cell><text:p>correct fourth column</text:p></table:table-cell></table:table-row></table:table>"
+        val d = OfficeParsers.odf("ods", zip("content.xml" to "<office:document-content $T><office:body><office:spreadsheet>$body</office:spreadsheet></office:body></office:document-content>"))!!
+        assertEquals(listOf("", "", "", "correct fourth column"), d.units.single().rows!!.single())
+    }
+
     @Test fun odsRepeatedCellsAndRowsAreBounded() {
         val body = "<table:table table:name=\"Sheet1\"><table:table-row><table:table-cell><text:p>id</text:p></table:table-cell><table:table-cell><text:p>name</text:p></table:table-cell>" +
             "<table:table-cell table:number-columns-repeated=\"1000\"/></table:table-row>" +

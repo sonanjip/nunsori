@@ -88,3 +88,5 @@ Deleted files are pruned, moved files updated in place, changed files (size or m
 ## After a pass: scheduled file tasks
 
 When a pass indexed files, `IndexingWorker` calls `IndexEvents.notifyChanged`: apps that listen (Malbotdari's scheduled file tasks) then ask `changesSince` for the items that reached `DONE` after their cursor (`indexedAt`), see [architecture.md](architecture.md#11-index-api-other-apps). Such tasks therefore fire after indexing, not when a file is created.
+
+ODS repeated empty cells retain their column positions, so subsequent values remain under the correct headers (within the column limit). Reindex an existing ODS file to refresh text extracted by an older version.
