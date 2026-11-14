@@ -70,6 +70,8 @@ Defined in `data/db/Entities.kt`.
 
 **`indexed_folders`**: `relativePath`, `enabled`, `recursive`.
 
+**`user_keywords`** (v10, "My keywords"): `sourceKey`, `text`, `createdAt`, unique per (`sourceKey`, `text`). Keyed by the file, not the item row, because `IndexRunner` replaces item rows when it reprocesses a file and files that were never indexed have none. The searchable copies are `USER_KEYWORD` segments, rebuilt from this table (see [indexing.md](indexing.md#my-keywords)).
+
 **`people`** (`name` or null, `coverFaceId`, timestamps) and **`faces`** (`itemId` with cascade delete, box in 0..1, `score`, int8 128-d `vector`, `personId` set to null when its person is deleted, `blockedPersonId` = the group the user took it out of, `thumbPath` of the crop), added in v8 together with `items.faceKey` (face model key a photo was scanned with; null = not scanned). See [indexing.md](indexing.md#faces).
 
 The chat tables (`chat_sessions`, `chat_messages`, `scheduled_tasks`, `pending_actions`, v4 to v7) were dropped in v9 when the chat moved to Malbotdari.
@@ -84,10 +86,11 @@ The chat tables (`chat_sessions`, `chat_messages`, `scheduled_tasks`, `pending_a
 | `TRANSCRIPT` | audio and video speech | TEXT |
 | `AUDIO_CLIP` | audio windows (740M only) | AUDIO |
 | `VIDEO_CLIP` | video clips | VISUAL |
+| `USER_KEYWORD` | the user's own keywords (`user_keywords`), one per keyword | TEXT |
 
 **Vector format.** int8, stored as `[scale: float32][int8 × dim]` (`Quant`), 768 dims. Dot products are done in memory over all vectors.
 
-**Migrations.** The schema is at **v9** (`AppDatabase.VERSION`; v3 added `items.place`, v4 the chat tables, v5 pinned chats, v6 scheduled tasks, v7 action cards, v8 faces and people, v9 dropped the chat tables; `MIGRATION_8_9` reports the dropped task ids so `AppUpgrade.cancelChatAlarms` cancels their alarms). `Migrations.kt` holds one `Migration` per step and the ordered `ALL_MIGRATIONS` list that `LsaApplication` registers. There is no destructive fallback on upgrade; only a downgrade (older build over a newer one) rebuilds the index, because it is derived data. Derived data that can be recomputed without a schema change is handled by `pipelineKey` instead. Policy: [development.md](development.md#schema-and-version-changes).
+**Migrations.** The schema is at **v10** (`AppDatabase.VERSION`; v3 added `items.place`, v4 the chat tables, v5 pinned chats, v6 scheduled tasks, v7 action cards, v8 faces and people, v9 dropped the chat tables, v10 added `user_keywords`; `MIGRATION_8_9` reports the dropped task ids so `AppUpgrade.cancelChatAlarms` cancels their alarms). `Migrations.kt` holds one `Migration` per step and the ordered `ALL_MIGRATIONS` list that `LsaApplication` registers. There is no destructive fallback on upgrade; only a downgrade (older build over a newer one) rebuilds the index, because it is derived data. Derived data that can be recomputed without a schema change is handled by `pipelineKey` instead. Policy: [development.md](development.md#schema-and-version-changes).
 
 **App upgrades.** `AppUpgrade.run` (called from `LsaApplication`) compares the stored `last_version_code` with `BuildConfig.VERSION_CODE` and runs per-release steps for settings or file-layout changes. Auto Backup is disabled (`allowBackup="false"`): the index is derived and a restored database would not match missing thumbnails and models.
 

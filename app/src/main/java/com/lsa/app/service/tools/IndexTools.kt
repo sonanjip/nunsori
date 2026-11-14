@@ -111,6 +111,7 @@ class SearchIndexTool(private val search: SearchEngine, private val dao: ItemDao
                         h.best?.startMs?.let { o.put("time", formatTime(it)) }
                         dateOf(s, item?.dateTaken ?: item?.modifiedAt)?.let { o.put("date", it) }
                         place?.let { o.put("place", it) }
+                        if (h.userKeyword) o.put("matched_user_keyword", true)
                         (h.snippet ?: h.best?.segId?.let(texts::get))?.replace(Regex("\\s+"), " ")?.take(160)?.let { o.put("snippet", it) }
                     },
             )

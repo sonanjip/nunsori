@@ -29,6 +29,8 @@ class ItemSession(
 ) : IndexSession {
     override val embeddingModelId: String get() = embedder.modelId
 
+    override suspend fun embedKeyword(text: String, title: String?): FloatArray = embedder.embedDocument(text, title)
+
     override suspend fun process(entry: SourceEntry, resume: Long, sink: ItemSink) {
         when (entry.kind) {
             ItemKind.IMAGE -> ImageExtractor(context, embedder, ocr).extract(entry, sink)

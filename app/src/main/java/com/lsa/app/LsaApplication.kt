@@ -51,8 +51,10 @@ class AppContainer(val context: Context) {
         ),
     )
     val places by lazy { PlaceFinder.fromAssets(context) }
-    val indexRunner by lazy { IndexRunner(db.itemDao(), source, places = places) }
+    val indexRunner by lazy { IndexRunner(db.itemDao(), source, places = places, keywords = db.keywordDao(), fileExists = mediaRepo::exists) }
     val indexing by lazy { IndexingController(context, db.itemDao(), indexRunner, settings) }
+    /** The user's own search keywords ("My keywords"). */
+    val keywords by lazy { com.lsa.app.indexing.KeywordRepository(db.keywordDao(), indexRunner, indexing, models, appScope) }
     val faces by lazy { com.lsa.app.indexing.faces.FaceIndexer(context, db.faceDao(), thumbs, models, settings) }
     val autoIndex = AutoIndexScheduler(
         context, settings, appScope,
@@ -64,7 +66,7 @@ class AppContainer(val context: Context) {
             combine(settings.ocrModelId, settings.asrModelId) { ocr, asr -> "$ocr|$asr" },
         ) { folders, model, kinds, others -> listOf(folders, model, kinds, others) },
     )
-    val fileOps: com.lsa.app.service.tools.FileOps by lazy { com.lsa.app.service.tools.FileOps(context, db.itemDao(), folders = { indexing.folderSpecs() }) }
+    val fileOps: com.lsa.app.service.tools.FileOps by lazy { com.lsa.app.service.tools.FileOps(context, db.itemDao(), folders = { indexing.folderSpecs() }, keywords = db.keywordDao()) }
     val approvals by lazy { com.lsa.app.service.Approvals({ settings.apiApprovalsJson.first() }, settings::setApiApprovalsJson, appScope) }
     val callerCheck by lazy {
         com.lsa.app.service.CallerCheck(context, approvals).apply {

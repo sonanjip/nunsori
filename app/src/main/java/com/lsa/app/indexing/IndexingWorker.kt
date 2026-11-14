@@ -90,6 +90,7 @@ class IndexingWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(c
         c.models.refresh() // pipeline keys and availability follow OndolSaem's current models
         val keys = ctl.pipelineKeys()
         val full = c.indexRunner.sync(folders, ctl.enabledKinds(), keys)
+        ctl.publishPlan(full, keys)
         // "Retry failed" touches only the failed files; paused work stays paused.
         var plan = if (!onlyFailed) full else {
             val failed = full.todo.filter { it.existing?.status == com.lsa.app.data.db.ItemStatus.FAILED }
@@ -99,6 +100,7 @@ class IndexingWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(c
         Log.i(TAG, "sync: total=${plan.total} todo=${plan.todo.size} auto=$auto")
         if (plan.todo.isEmpty()) {
             ctl.update(IndexProgress(total = plan.total, done = plan.done, finished = true))
+            c.keywords.embedPendingLocked(background = true)
             facePass(c, ctl)
             return Result.success()
         }
@@ -141,6 +143,7 @@ class IndexingWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(c
                 // Files added while this pass was running: take them now instead of waiting for the next trigger.
                 // Files that failed are not retried within the same pass.
                 val next = c.indexRunner.sync(folders, ctl.enabledKinds(), keys)
+                ctl.publishPlan(next, keys)
                 val fresh = next.todo.filter { it.existing?.status != com.lsa.app.data.db.ItemStatus.FAILED }
                 if (fresh.isEmpty()) break
                 Log.i(TAG, "another round: ${fresh.size} file(s) arrived during the run")
@@ -149,7 +152,10 @@ class IndexingWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(c
         } finally {
             ocrLease.close(); embLease.close()
         }
-        if (!result.stoppedEarly && !ctl.stopRequested) facePass(c, ctl)
+        if (!result.stoppedEarly && !ctl.stopRequested) {
+            c.keywords.embedPendingLocked(background = true)
+            facePass(c, ctl)
+        }
         // Other apps (Malbotdari's scheduled file tasks) ask what is new when told the index changed.
         if (indexed > 0) runCatching { com.lsa.app.service.IndexEvents.notifyChanged(applicationContext) }
         if (indexed > 0) outcome = AutoOutcome.INDEXED

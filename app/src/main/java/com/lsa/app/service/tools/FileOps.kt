@@ -68,6 +68,8 @@ class FileOps(
     private val root: File = Environment.getExternalStorageDirectory(),
     private val allowed: () -> Boolean = { com.lsa.app.ui.index.hasAllFilesAccess() },
     private val clock: () -> Long = System::currentTimeMillis,
+    /** The user's keywords follow a plain file to its new path. */
+    private val keywords: com.lsa.app.data.db.KeywordDao? = null,
 ) {
     val hasAccess: Boolean get() = allowed()
 
@@ -97,6 +99,7 @@ class FileOps(
                 val target = File(dir, FilePaths.uniqueName(file.name) { File(dir, it).exists() })
                 if (!file.renameTo(target)) return@each "could not move"
                 items.relocate(item.itemId, "fs:${target.absolutePath}", Uri.fromFile(target).toString(), newKey, target.name)
+                keywords?.rekey(item.sourceKey, "fs:${target.absolutePath}")
             } else {
                 val moved = moveInMediaStore(item, newKey) ?: return@each "this folder is not allowed for this file type"
                 items.updateLocation(item.itemId, moved.first, moved.second)

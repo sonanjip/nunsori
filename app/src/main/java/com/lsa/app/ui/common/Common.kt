@@ -178,6 +178,7 @@ fun ItemDetailSheet(itemId: Long, onDismiss: () -> Unit) {
             Meta(stringResource(R.string.detail_indexed), DateFormat.format("yyyy-MM-dd HH:mm", e.indexedAt).toString())
             Meta(stringResource(R.string.detail_model), e.embeddingModelId)
             e.error?.let { Meta(stringResource(R.string.detail_error), it) }
+            MyKeywordsSection(e.sourceKey, indexed = e.status == ItemStatus.DONE)
             if (e.kind == ItemKind.IMAGE) {
                 val text = segments.filter { it.type == SegmentType.OCR_TEXT }.joinToString("\n") { it.text.orEmpty() }
                 Text(stringResource(R.string.detail_ocr_text), style = MaterialTheme.typography.titleSmall)
@@ -186,7 +187,7 @@ fun ItemDetailSheet(itemId: Long, onDismiss: () -> Unit) {
                     style = MaterialTheme.typography.bodyMedium,
                 )
             } else {
-                val parts = segments.filter { !it.text.isNullOrBlank() || it.type == SegmentType.VIDEO_CLIP || it.type == SegmentType.AUDIO_CLIP }
+                val parts = segments.filter { it.type != SegmentType.USER_KEYWORD && (!it.text.isNullOrBlank() || it.type == SegmentType.VIDEO_CLIP || it.type == SegmentType.AUDIO_CLIP) }
                 Text(stringResource(R.string.detail_content), style = MaterialTheme.typography.titleSmall)
                 parts.take(12).forEach { seg ->
                     val loc = locationLabel(seg.page, seg.startMs)
@@ -217,7 +218,7 @@ fun ItemDetailSheet(itemId: Long, onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun Meta(label: String, value: String) {
+internal fun Meta(label: String, value: String) {
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(0.35f))
         Text(value, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(0.65f))

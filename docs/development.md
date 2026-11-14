@@ -92,4 +92,4 @@ Never use `fallbackToDestructiveMigration` for upgrades. Changes that only affec
 
 Commit only code, scripts and docs: no models, test media, databases or build output (see `.gitignore`). Update docs with code ([CONTRIBUTING.md](../CONTRIBUTING.md)).
 
-The current schema is v9 (`MIGRATION_8_9` drops the chat tables and reports the dropped task ids so their alarms are cancelled; covered by `MigrationTest.v8ToV9DropsTheChatAndKeepsTheIndexAndPeople`). The chat and its tests live in Malbotdari since 0.10.0.
+The current schema is v10 (`MIGRATION_9_10` adds `user_keywords` for *My keywords*; covered by `MigrationTest.v9ToV10AddsUserKeywordsUniquePerFile`. `MIGRATION_8_9` dropped the chat tables and reports the dropped task ids so their alarms are cancelled; covered by `MigrationTest.v8ToV9DropsTheChatAndKeepsTheIndexAndPeople`). The chat and its tests live in Malbotdari since 0.10.0.

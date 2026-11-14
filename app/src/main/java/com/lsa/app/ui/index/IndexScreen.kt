@@ -5,7 +5,19 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.automirrored.filled.Label
+import androidx.compose.material3.PrimaryTabRow
+import androidx.compose.material3.Tab
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import com.lsa.app.indexing.PendingFile
+import com.lsa.app.indexing.PendingReason
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -46,7 +58,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.lsa.app.R
-import com.lsa.app.data.db.ItemStatus
 import com.lsa.app.indexing.IndexError
 import com.lsa.app.rememberContainer
 import com.lsa.app.ui.common.ItemDetailSheet
@@ -71,17 +82,23 @@ fun IndexScreen(onOpenSettings: () -> Unit) {
     val vm: IndexViewModel = viewModel(factory = viewModelFactory { initializer { IndexViewModel(container) } })
     val ctx = LocalContext.current
 
-    val summaries by vm.summaries.collectAsStateWithLifecycle()
     val progress by vm.progress.collectAsStateWithLifecycle()
     val running by vm.running.collectAsStateWithLifecycle()
     val folderCount by vm.enabledFolderCount.collectAsStateWithLifecycle()
     val modelReady by vm.modelReady.collectAsStateWithLifecycle()
     val stale by vm.staleCount.collectAsStateWithLifecycle()
     val failed by vm.failedCount.collectAsStateWithLifecycle()
+    val indexed by vm.indexed.collectAsStateWithLifecycle()
+    val pending by vm.pending.collectAsStateWithLifecycle()
+    val pendingLoaded by vm.pendingLoaded.collectAsStateWithLifecycle()
+    val keywordKeys by vm.keywordKeys.collectAsStateWithLifecycle()
     var detailId by remember { mutableStateOf<Long?>(null) }
-    var failedOnly by remember { mutableStateOf(false) }
-    val shown = if (failedOnly) summaries.filter { it.status == ItemStatus.FAILED } else summaries
-    if (failedOnly && failed == 0) failedOnly = false
+    var detailFile by remember { mutableStateOf<PendingFile?>(null) }
+    var tab by rememberSaveable { mutableIntStateOf(0) }
+    var reason by rememberSaveable { mutableStateOf<PendingReason?>(null) }
+    val reasonCounts = pending.groupingBy { it.reason }.eachCount()
+    if (reason != null && (reasonCounts[reason] ?: 0) == 0) reason = null
+    val waiting = if (reason == null) pending else pending.filter { it.reason == reason }
 
     val notifLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { vm.start() }
     fun onStart() {
@@ -132,13 +149,35 @@ fun IndexScreen(onOpenSettings: () -> Unit) {
                     }
                 }
                 com.lsa.app.ui.onboarding.LastAutoRunLine()
-                if (failed > 0) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        FilterChip(
-                            selected = failedOnly, onClick = { failedOnly = !failedOnly },
-                            label = { Text(stringResource(R.string.index_filter_failed, failed)) },
-                        )
-                        if (failedOnly) {
+            }
+        }
+        item(span = { GridItemSpan(maxLineSpan) }) {
+            PrimaryTabRow(selectedTabIndex = tab, modifier = Modifier.padding(bottom = 8.dp)) {
+                Tab(selected = tab == 0, onClick = { tab = 0 }, modifier = Modifier.testTag("tab_indexed"),
+                    text = { Text(stringResource(R.string.index_tab_indexed, indexed.size)) })
+                Tab(selected = tab == 1, onClick = { tab = 1 }, modifier = Modifier.testTag("tab_pending"),
+                    text = { Text(stringResource(R.string.index_tab_pending, pending.size)) })
+            }
+        }
+        if (tab == 0) {
+            if (indexed.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) { EmptyLine(stringResource(R.string.index_empty)) }
+            items(indexed, key = { it.itemId }) { s ->
+                Box(Modifier.aspectRatio(1f).clickable { detailId = s.itemId }) {
+                    ItemThumb(s.kind, s.uri, s.thumbPath, s.displayName, false, Modifier.fillMaxSize())
+                    if (s.sourceKey in keywordKeys) KeywordMark(Modifier.align(Alignment.TopEnd))
+                }
+            }
+        } else {
+            if (pending.isNotEmpty()) {
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp), itemVerticalAlignment = Alignment.CenterVertically) {
+                        FilterChip(selected = reason == null, onClick = { reason = null }, label = { Text(stringResource(R.string.pending_all, pending.size)) })
+                        PendingReason.entries.forEach { r ->
+                            val n = reasonCounts[r] ?: 0
+                            if (n > 0) FilterChip(selected = reason == r, onClick = { reason = if (reason == r) null else r },
+                                label = { Text("${stringResource(r.label)} $n") })
+                        }
+                        if (failed > 0 && (reason == null || reason == PendingReason.FAILED)) {
                             OutlinedButton(onClick = vm::retryFailed, enabled = canStart && !running) {
                                 Text(stringResource(R.string.index_retry_failed))
                             }
@@ -146,26 +185,62 @@ fun IndexScreen(onOpenSettings: () -> Unit) {
                     }
                 }
             }
-        }
-        if (shown.isEmpty()) {
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                Text(
-                    stringResource(R.string.index_empty),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(16.dp),
-                )
+            if (pending.isEmpty()) {
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    EmptyLine(stringResource(if (pendingLoaded) R.string.pending_empty else R.string.pending_loading))
+                }
+            }
+            items(waiting, key = { it.sourceKey }) { f ->
+                Box(Modifier.aspectRatio(1f).clickable { if (f.itemId != null) detailId = f.itemId else detailFile = f }) {
+                    ItemThumb(f.kind, f.uri, null, f.displayName, f.reason == PendingReason.FAILED, Modifier.fillMaxSize())
+                    if (f.sourceKey in keywordKeys) KeywordMark(Modifier.align(Alignment.TopEnd))
+                    Text(
+                        stringResource(f.reason.label),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        maxLines = 1,
+                        modifier = Modifier.align(Alignment.BottomStart).padding(4.dp)
+                            .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.9f), MaterialTheme.shapes.extraSmall)
+                            .padding(horizontal = 4.dp, vertical = 1.dp),
+                    )
+                }
             }
         }
-        items(shown, key = { it.itemId }) { s ->
-            ItemThumb(
-                s.kind, s.uri, s.thumbPath, s.displayName, s.status == ItemStatus.FAILED,
-                Modifier.aspectRatio(1f).clickable { detailId = s.itemId },
-            )
-        }
     }
+    detailFile?.let { PendingFileSheet(it) { detailFile = null } }
     detailId?.let { ItemDetailSheet(it) { detailId = null } }
 }
+
+@Composable
+private fun EmptyLine(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(16.dp),
+    )
+}
+
+/** Small tag mark on files that have "My keywords". */
+@Composable
+private fun KeywordMark(modifier: Modifier) {
+    Icon(
+        Icons.AutoMirrored.Filled.Label, null,
+        tint = MaterialTheme.colorScheme.onPrimary,
+        modifier = modifier.padding(4.dp).size(18.dp)
+            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.85f), CircleShape).padding(3.dp),
+    )
+}
+
+val PendingReason.label: Int
+    get() = when (this) {
+        PendingReason.NEW -> R.string.pending_reason_new
+        PendingReason.CHANGED -> R.string.pending_reason_changed
+        PendingReason.MODEL -> R.string.pending_reason_model
+        PendingReason.RESUME -> R.string.pending_reason_resume
+        PendingReason.FAILED -> R.string.pending_reason_failed
+        PendingReason.SKIPPED -> R.string.pending_reason_skipped
+    }
 
 @Composable
 private fun StatusCard(

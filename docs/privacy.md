@@ -11,6 +11,7 @@ All in the app's private storage (removed on uninstall or "Clear data"):
 - No models: since 0.8.0 they are downloaded and kept by the companion app OndolSaem (see below).
 - No chats: since 0.10.0 the chat is the companion app Malbotdari (upgrading deletes the chats, tasks and cards stored by earlier versions, and the photos attached to them).
 - Faces found in your photos (face grouping, on by default): for each face its position in the photo, a 128-number identity vector and a small crop, plus the groups and the names you give them. These are **biometric data**. They are computed by OndolSaem on the phone (the photo is handed over and nothing is kept there), stored only in Nunsori's private database and never leave the phone. Turning *Group photos by person* off (Settings › Index) deletes all of them at once.
+- The keywords you add to files yourself (*My keywords*), kept per file in the same database until you remove them or the file is deleted.
 - Settings (DataStore), including which other apps you allowed to use the index.
 
 Your original files are only read, never modified.

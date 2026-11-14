@@ -14,9 +14,12 @@ A three-step wizard appears on the first launch. Everything in it can be changed
 
 ## Index
 
-Shows progress ("n / total files"), the file being processed, **Start / Pause**, and a thumbnail grid of indexed files. Indexing continues in the background with a notification, and resumes after the app is killed.
+Shows progress ("n / total files"), the file being processed, **Start / Pause**, and two tabs of thumbnails. Indexing continues in the background with a notification, and resumes after the app is killed.
 
-- **Failed files:** a "Failed (n)" chip filters the grid to files that could not be indexed (tap one to see the error); **Retry failed** runs only those files, without resuming the rest of a paused run. Failed files are also retried by every normal run.
+- **Indexed** lists the files that are searchable and up to date. A small tag mark shows files that have *My keywords*.
+- **Waiting** lists the files in the indexed folders that are not (or no longer) searchable as they are, each labelled with why: *New* (never indexed), *Changed* (the file was edited), *Model changed* (the search model changed in OndolSaem), *Unfinished* (an interrupted run continues there), *Failed* and *Skipped* (unsupported or protected). Chips filter by reason. The list is worked out when you open the screen, when folders, kinds or the model change, and after every run.
+- **Failed files:** with the *Failed* chip (or *All*), **Retry failed** runs only those files, without resuming the rest of a paused run; tap one to see the error. Failed files are also retried by every normal run.
+- **My keywords:** in any file's details (from the Index tabs or from search results) you can add your own search words, for example "passport copy" for a photo of a document. Separate several with commas; up to 20 per file, 50 characters each; tap a keyword to remove it. They are found by exact words right away and by meaning once the search model has embedded them, which takes a few seconds (the details say *Adding to meaning search…* until then). A file that is not indexed yet keeps its keywords and uses them when it is indexed. Changing a keyword does not move an indexed file back to *Waiting*. Results found through one show a *My keyword* badge.
 - After the files, the same run looks for faces in photos not scanned yet (People); a second line under the status shows *Finding faces: n of m photos* while it works, so the run is not over yet even when the status says it is up to date.
 
 ## Search

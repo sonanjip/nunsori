@@ -85,6 +85,19 @@ After the files of a run are processed (and also when there was nothing new), `I
 
 Deleted files are pruned, moved files updated in place, changed files (size or modified time) reprocessed. An empty listing is treated as an error condition and never wipes the index. Sync does not need any model.
 
+Its work list is also what the index screen's **Waiting** tab shows (`IndexingController.pending`, published by every run and by `refreshPending()`; `PendingReasons` labels each file: new, changed, model changed, unfinished, failed; skipped rows come from the database).
+
+## My keywords
+
+The user's own search words live in `user_keywords`, keyed by `sourceKey` (`KeywordRepository`, rules in `Keywords`: comma or line separated, at most 20 per file and 50 characters each, repeats ignored regardless of case).
+
+- **Indexing a file** (`IndexRunner.processOne`): after the extractor succeeds, each keyword becomes a `USER_KEYWORD` segment embedded with `embedDocument(keyword, title = file name)` by the same model. Failed and skipped files get none. A keyword is never mixed into the image or text vectors.
+- **Editing an indexed file**: the keyword is written to the table and, at once, a text-only segment is added or removed (`syncKeywords(onlyKey)`), so word search finds it immediately. `KeywordRepository.embedSoon` then takes the run lock if no run holds it, borrows the embedder and fills the missing vectors (`syncKeywords(embed)`). Otherwise the running pass does it at its end (`IndexingWorker` → `embedPendingLocked`), as does every later pass. Without a model the segments stay text-only until then. The file is not reprocessed and stays on the **Indexed** tab. Changes bump `items.indexedAt` so the search cache and other apps' "what is new" see them.
+- **Reprocessing** (model change, edited file) rebuilds the item and its keyword segments from the table, so keywords survive.
+- **Moved and deleted files**: keywords of a plain file moved by `FileOps` follow it; for a plain file moved by something else, `sync` matches a vanished `fs:` key to a single new file with the same kind, size and modified time. MediaStore keys do not change on a move. Keywords of files that no longer exist (`MediaStoreRepository.exists`) are deleted; those of files that are only out of view (folder or kind turned off) are kept. A file that was never indexed and is moved by another app loses its keywords.
+
+`PipelineKeys` are unchanged by keywords: adding one never triggers a full reindex.
+
 ## After a pass: scheduled file tasks
 
 When a pass indexed files, `IndexingWorker` calls `IndexEvents.notifyChanged`: apps that listen (Malbotdari's scheduled file tasks) then ask `changesSince` for the items that reached `DONE` after their cursor (`indexedAt`), see [architecture.md](architecture.md#11-index-api-other-apps). Such tasks therefore fire after indexing, not when a file is created.

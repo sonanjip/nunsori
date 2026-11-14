@@ -43,6 +43,10 @@ Cosine similarities live in different ranges per space (image to text vs text to
 
 Query is lowercased and split on whitespace; single ASCII letters are dropped, single Korean syllables are kept. ASCII tokens must match whole words; other scripts match as substrings. A match is **exact** when every token matches and the whole query occurs as a phrase.
 
+## My keywords (`USER_KEYWORD`)
+
+The user's own keywords are ordinary segments: word search finds them through the same `textCandidates` + `KeywordMatcher` path, and their vectors join the **TEXT** group (factor 1.0) like OCR text and transcripts, so they are normalised with the rest of that group. When the best keyword hit or the best semantic segment is a `USER_KEYWORD`, `SearchHit.userKeyword` is set: the card shows a **My keyword** badge instead of *Keyword*, and other apps' `search_index` results carry `matched_user_keyword: true`. The snippet is the keyword itself. See [indexing.md](indexing.md#my-keywords).
+
 ## Filters (`SearchFilter`)
 
 Kinds (UI: Documents = text files + PDF/Office, Images, Audio, Video; none selected = all) and a date range on `COALESCE(dateTaken, modifiedAt)` (photos by when they were taken, everything else by modification time). The UI offers presets (any date, today, last 7 days, last 30 days, this year) and a custom range. With filters but an empty query the result is a **browse list**, newest first (up to `BROWSE_LIMIT` = 100). Keyword candidates are limited to 2000 before the filter is applied, so a very common word can crowd out matches in a narrow filter.
@@ -61,7 +65,7 @@ Final score = sum of the weighted signals + `AGREEMENT_BONUS` (0.15) × (number 
 
 - Exact keyword matches and exact metadata matches (all words and the phrase) are pinned above everything and get a score floor of 0.6 (`EXACT_MATCH_FLOOR`); among them the higher score wins.
 - Results scoring below 25% of the top score are dropped (`TAIL_FRACTION`).
-- Segments are grouped per item; the best segment gives the page (`p.N`) or time (`mm:ss`) shown on the card. Badges (Image, Text, Audio, Keyword, Place, Name) show which signals matched.
+- Segments are grouped per item; the best segment gives the page (`p.N`) or time (`mm:ss`) shown on the card. Badges (Image, Text, Audio, Keyword or My keyword, Place, Name) show which signals matched.
 - A video transcript hit is narrowed to the overlapping video clip so the shown time is the clip.
 
 ## Tuning

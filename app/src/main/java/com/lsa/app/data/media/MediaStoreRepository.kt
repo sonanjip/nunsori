@@ -132,6 +132,27 @@ class MediaStoreRepository(private val context: Context) : ItemSource {
         return out
     }
 
+    /**
+     * Whether the file behind [sourceKey] still exists, whatever folder it is in now. Unknown keys and failed
+     * queries count as gone.
+     */
+    suspend fun exists(sourceKey: String): Boolean = withContext(Dispatchers.IO) {
+        if (sourceKey.startsWith("fs:")) return@withContext java.io.File(sourceKey.removePrefix("fs:")).exists()
+        val parts = sourceKey.split(':')
+        if (parts.size != 3 || parts[0] != "ms") return@withContext false
+        val id = parts[2].toLongOrNull() ?: return@withContext false
+        val coll = when (parts[1]) {
+            "image" -> MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+            "audio" -> MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+            "video" -> MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+            else -> return@withContext false
+        }
+        runCatching {
+            resolver.query(ContentUris.withAppendedId(coll, id), arrayOf(MediaStore.MediaColumns._ID), null, null, null)
+                ?.use { it.count > 0 } ?: false
+        }.getOrDefault(false)
+    }
+
     suspend fun listFolders(): List<FolderInfo> = withContext(Dispatchers.IO) {
         queryAllImages().groupingBy { it.folderKey }.eachCount()
             .map { FolderInfo(it.key, it.value) }

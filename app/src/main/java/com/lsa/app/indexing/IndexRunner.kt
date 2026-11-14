@@ -1,6 +1,8 @@
 package com.lsa.app.indexing
 
 import com.lsa.app.data.db.ItemDao
+import com.lsa.app.data.db.KeywordDao
+import com.lsa.app.ml.embedding.Quant
 import com.lsa.app.indexing.places.PlaceFinder
 import com.lsa.app.data.db.ItemEntity
 import com.lsa.app.data.db.ItemKind
@@ -61,6 +63,9 @@ interface IndexSession {
 
     /** [resume] is the `progress` stored by an interrupted run of the same pipeline (0 = start over). */
     suspend fun process(entry: SourceEntry, resume: Long, sink: ItemSink)
+
+    /** Embeds one of the user's keywords; null leaves it text-only until [IndexRunner.syncKeywords] fills it in. */
+    suspend fun embedKeyword(text: String, title: String?): FloatArray? = null
 }
 
 /** A file that still has to be processed, plus what is already stored for it. */
@@ -81,6 +86,10 @@ class IndexRunner(
     private val clock: () -> Long = System::currentTimeMillis,
     /** Turns GPS positions into searchable place names; null disables it. */
     private val places: PlaceFinder? = null,
+    /** The user's own keywords; null (tests of other things) disables them. */
+    private val keywords: KeywordDao? = null,
+    /** Whether a file that left the listing still exists (folder turned off vs. deleted); keywords of deleted files go. */
+    private val fileExists: suspend (sourceKey: String) -> Boolean = { false },
 ) {
     /**
      * @param kinds kinds that were looked at; rows of other kinds are left alone.
@@ -101,6 +110,7 @@ class IndexRunner(
 
         val present = entries.mapTo(HashSet()) { it.sourceKey }
         states.values.filter { it.sourceKey !in present }.map { it.itemId }.chunked(500).forEach { dao.deleteItems(it) }
+        followKeywords(entries, present, states)
 
         val todo = ArrayList<TodoItem>()
         for (e in entries) {
@@ -165,6 +175,7 @@ class IndexRunner(
         val sink = DbSink(itemId)
         return try {
             session.process(e, resume, sink)
+            addKeywordSegments(itemId, e, session)
             dao.setStatus(itemId, ItemStatus.DONE, null, clock())
             true
         } catch (c: CancellationException) {
@@ -179,6 +190,100 @@ class IndexRunner(
             false
         }
     }
+
+    /** The user's keywords for a freshly processed file, embedded with the same model as the rest of it. */
+    private suspend fun addKeywordSegments(itemId: Long, e: SourceEntry, session: IndexSession) {
+        val words = keywords?.of(e.sourceKey)?.map { it.text } ?: return
+        if (words.isEmpty()) return
+        val segs = words.mapIndexed { i, w ->
+            val vec = try { session.embedKeyword(w, e.displayName) } catch (c: CancellationException) { throw c } catch (_: Exception) { null }
+            SegmentEntity(
+                itemId = itemId, type = SegmentType.USER_KEYWORD, ordinal = Keywords.ORDINAL_BASE + i, startMs = null, endMs = null,
+                page = null, text = w, embedding = vec?.let(Quant::encode), thumbPath = null,
+            )
+        }
+        dao.insertSegments(segs)
+    }
+
+    /**
+     * Keywords of files that left the listing: a plain file that moved (same kind, size and time under a new path,
+     * found once) takes them along; those of deleted files are dropped; those of files that are only out of view
+     * (folder or kind turned off) are kept for when they come back.
+     */
+    private suspend fun followKeywords(entries: List<SourceEntry>, present: Set<String>, states: Map<String, ItemState>) {
+        val kw = keywords ?: return
+        val missing = kw.keys().filter { it !in present }
+        if (missing.isEmpty()) return
+        val newcomers = entries.filter { it.sourceKey !in states && it.sourceKey.startsWith("fs:") }
+            .groupBy { Triple(it.kind, it.sizeBytes, it.modifiedAt) }
+        val gone = ArrayList<String>()
+        for (key in missing) {
+            if (fileExists(key)) continue
+            val old = states[key]
+            val moved = if (old != null && key.startsWith("fs:")) newcomers[Triple(old.kind, old.sizeBytes, old.modifiedAt)]?.singleOrNull() else null
+            if (moved != null) kw.rekey(key, moved.sourceKey) else gone += key
+        }
+        gone.chunked(500).forEach { kw.deleteFor(it) }
+    }
+
+    /**
+     * Brings the [SegmentType.USER_KEYWORD] segments of finished items in line with the keyword table: removes
+     * deleted keywords, adds new ones and embeds the ones still without a vector (when [embed] is given).
+     * [onlyKey] limits the work to one file. Returns how many items changed.
+     */
+    suspend fun syncKeywords(onlyKey: String? = null, embed: (suspend (text: String, title: String) -> FloatArray?)? = null): Int {
+        val kw = keywords ?: return 0
+        val wanted = (if (onlyKey != null) kw.of(onlyKey) else kw.all()).groupBy({ it.sourceKey }, { it.text })
+        val segs = dao.keywordSegments().filter { onlyKey == null || it.sourceKey == onlyKey }
+        val changed = HashSet<Long>()
+        val stale = segs.filter { it.text !in wanted[it.sourceKey].orEmpty() }
+        stale.map { it.segId }.chunked(500).forEach { dao.deleteSegments(it) }
+        stale.mapTo(changed) { it.itemId }
+        val have = segs.filter { it !in stale }.groupBy({ it.itemId }, { it.text })
+        val items = wanted.keys.toList().chunked(500).flatMap { dao.doneItemsFor(it) }
+        for (item in items) {
+            val texts = have[item.itemId].orEmpty()
+            val add = wanted[item.sourceKey].orEmpty().filter { it !in texts }
+            if (add.isEmpty()) continue
+            val base = Keywords.ORDINAL_BASE + texts.size
+            dao.insertSegments(
+                add.mapIndexed { i, w ->
+                    SegmentEntity(
+                        itemId = item.itemId, type = SegmentType.USER_KEYWORD, ordinal = base + i, startMs = null, endMs = null,
+                        page = null, text = w, embedding = embed?.let { e -> safeEmbed(e, w, item.displayName) }?.let(Quant::encode), thumbPath = null,
+                    )
+                },
+            )
+            changed += item.itemId
+        }
+        if (embed != null) {
+            for (s in dao.keywordSegments()) {
+                if (s.embedded || s.text == null || (onlyKey != null && s.sourceKey != onlyKey)) continue
+                currentCoroutineContext().ensureActive()
+                val vec = safeEmbed(embed, s.text, s.displayName) ?: continue
+                dao.setSegmentEmbedding(s.segId, Quant.encode(vec))
+                changed += s.itemId
+            }
+        }
+        val now = clock()
+        changed.forEach { dao.touch(it, now) }
+        return changed.size
+    }
+
+    /** Whether [syncKeywords] with an embedder has anything to do (cheap; checked before loading a model). */
+    suspend fun keywordWorkPending(): Boolean {
+        val kw = keywords ?: return false
+        val wanted = kw.all().groupBy({ it.sourceKey }, { it.text })
+        if (wanted.isEmpty()) return dao.keywordSegments().isNotEmpty()
+        val segs = dao.keywordSegments()
+        if (segs.any { !it.embedded || it.text !in wanted[it.sourceKey].orEmpty() }) return true
+        val have = segs.groupBy({ it.sourceKey }, { it.text })
+        return wanted.keys.toList().chunked(500).flatMap { dao.doneItemsFor(it) }
+            .any { item -> wanted[item.sourceKey].orEmpty().any { it !in have[item.sourceKey].orEmpty() } }
+    }
+
+    private suspend fun safeEmbed(embed: suspend (String, String) -> FloatArray?, text: String, title: String): FloatArray? =
+        try { embed(text, title) } catch (c: CancellationException) { throw c } catch (_: Exception) { null }
 
     /** Fills `place` for rows that have a position but no name yet (older rows, or places added after indexing). Needs no model. */
     private suspend fun backfillPlaces() {

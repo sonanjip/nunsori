@@ -11,7 +11,7 @@ import kotlinx.coroutines.flow.Flow
 
 private const val SUMMARY_COLS = """
     i.itemId, i.kind, i.uri, i.displayName, i.folderKey, i.title, i.sizeBytes, i.width, i.height, i.durationMs,
-    i.pageCount, i.status, i.indexedAt,
+    i.pageCount, i.status, i.indexedAt, i.sourceKey,
     (SELECT s.thumbPath FROM segments s WHERE s.itemId = i.itemId AND s.thumbPath IS NOT NULL ORDER BY s.ordinal LIMIT 1) AS thumbPath"""
 
 @Dao
@@ -125,6 +125,34 @@ interface ItemDao {
     @Query("DELETE FROM segments WHERE itemId = :itemId")
     suspend fun deleteSegmentsOf(itemId: Long)
 
+    /** The [SegmentType.USER_KEYWORD] segments of finished items, to compare with the keyword table. */
+    @Query(
+        """SELECT s.segId, s.itemId, i.sourceKey, i.displayName, s.text, (s.embedding IS NOT NULL) AS embedded
+           FROM segments s JOIN items i ON i.itemId = s.itemId WHERE s.type = 'USER_KEYWORD' AND i.status = 'DONE'""",
+    )
+    suspend fun keywordSegments(): List<KeywordSegRow>
+
+    /** Finished items among [keys] (files that have keywords), to find the ones missing a keyword segment. */
+    @Query("SELECT itemId, sourceKey, displayName FROM items WHERE status = 'DONE' AND sourceKey IN (:keys)")
+    suspend fun doneItemsFor(keys: List<String>): List<KeywordItemRow>
+
+    /** Keyword segments of [sourceKey]'s finished item that have a vector (the rest wait for the model). */
+    @Query(
+        """SELECT COUNT(*) FROM segments s JOIN items i ON i.itemId = s.itemId
+           WHERE i.sourceKey = :sourceKey AND i.status = 'DONE' AND s.type = 'USER_KEYWORD' AND s.embedding IS NOT NULL""",
+    )
+    fun observeEmbeddedKeywords(sourceKey: String): Flow<Int>
+
+    @Query("DELETE FROM segments WHERE segId IN (:ids)")
+    suspend fun deleteSegments(ids: List<Long>)
+
+    @Query("UPDATE segments SET embedding = :embedding WHERE segId = :segId")
+    suspend fun setSegmentEmbedding(segId: Long, embedding: ByteArray)
+
+    /** Marks an item as changed (search cache, other apps' "what is new") after its keywords changed. */
+    @Query("UPDATE items SET indexedAt = :at WHERE itemId = :id")
+    suspend fun touch(id: Long, at: Long)
+
     @Query(
         """SELECT s.segId, s.itemId, s.type, s.startMs, s.endMs, s.page, s.embedding
            FROM segments s JOIN items i ON i.itemId = s.itemId
@@ -197,7 +225,7 @@ interface ItemDao {
 @Database(
     entities = [
         ItemEntity::class, SegmentEntity::class, IndexedFolderEntity::class,
-        PersonEntity::class, FaceEntity::class,
+        PersonEntity::class, FaceEntity::class, UserKeywordEntity::class,
     ],
     version = AppDatabase.VERSION,
     exportSchema = true,
@@ -205,9 +233,10 @@ interface ItemDao {
 abstract class AppDatabase : RoomDatabase() {
     abstract fun itemDao(): ItemDao
     abstract fun faceDao(): FaceDao
+    abstract fun keywordDao(): KeywordDao
 
     companion object {
         /** Bump together with a new migration in Migrations.kt (see docs/development.md). */
-        const val VERSION = 9
+        const val VERSION = 10
     }
 }

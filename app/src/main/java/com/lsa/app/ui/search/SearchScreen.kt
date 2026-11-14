@@ -161,7 +161,8 @@ fun SearchScreen(onOpenSettings: () -> Unit) {
                                     r.hit.visualSim?.let { Badge(stringResource(R.string.badge_image), "%.2f".format(it)) }
                                     r.hit.textSim?.let { Badge(stringResource(R.string.badge_ocr), "%.2f".format(it)) }
                                     r.hit.audioSim?.let { Badge(stringResource(R.string.badge_audio), "%.2f".format(it)) }
-                                    if (r.hit.keywordMatches > 0) Badge(stringResource(R.string.badge_keyword), null)
+                                    if (r.hit.userKeyword) Badge(stringResource(R.string.badge_my_keyword), null)
+                                    else if (r.hit.keywordMatches > 0) Badge(stringResource(R.string.badge_keyword), null)
                                     when (r.hit.metaMatch) {
                                         MetaMatch.PLACE -> Badge(stringResource(R.string.badge_place), null)
                                         MetaMatch.NAME -> Badge(stringResource(R.string.badge_name), null)

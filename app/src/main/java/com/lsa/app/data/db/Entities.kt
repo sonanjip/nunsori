@@ -19,14 +19,17 @@ enum class ItemStatus {
 
 /** What a [SegmentEntity] holds; decides how it is searched and displayed. */
 enum class SegmentType {
-    IMAGE, OCR_TEXT, TEXT_CHUNK, PAGE_IMAGE, CARD_IMAGE, TRANSCRIPT, AUDIO_CLIP, VIDEO_CLIP;
+    IMAGE, OCR_TEXT, TEXT_CHUNK, PAGE_IMAGE, CARD_IMAGE, TRANSCRIPT, AUDIO_CLIP, VIDEO_CLIP,
+
+    /** One of the user's own keywords ("My keywords"), derived from [UserKeywordEntity]; rebuilt whenever the item is. */
+    USER_KEYWORD;
 
     /** Signal group used when scoring search results. */
     val group: SignalGroup
         get() = when (this) {
             IMAGE, PAGE_IMAGE, CARD_IMAGE, VIDEO_CLIP -> SignalGroup.VISUAL
             AUDIO_CLIP -> SignalGroup.AUDIO
-            OCR_TEXT, TEXT_CHUNK, TRANSCRIPT -> SignalGroup.TEXT
+            OCR_TEXT, TEXT_CHUNK, TRANSCRIPT, USER_KEYWORD -> SignalGroup.TEXT
         }
 }
 
@@ -117,6 +120,8 @@ data class ItemSummary(
     val status: ItemStatus,
     val indexedAt: Long,
     val thumbPath: String?,
+    /** Default only for hand-built summaries; Room always fills it from the row. */
+    val sourceKey: String = "",
 )
 
 /** An item id with the time its indexing finished. */
@@ -164,3 +169,24 @@ data class MetaRow(val itemId: Long, val displayName: String, val title: String?
 data class GeoPoint(val itemId: Long, val lat: Double, val lon: Double)
 
 data class SegText(val segId: Long, val text: String)
+
+/**
+ * A search keyword the user added to a file ("My keywords"). Keyed by [sourceKey], not by item id: item rows are
+ * replaced on every reprocess and do not exist yet for files that were never indexed. The searchable copies are
+ * [SegmentType.USER_KEYWORD] segments, rebuilt from this table.
+ */
+@Entity(
+    tableName = "user_keywords",
+    indices = [Index(value = ["sourceKey", "text"], unique = true)],
+)
+data class UserKeywordEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val sourceKey: String,
+    val text: String,
+    val createdAt: Long,
+)
+
+/** A [SegmentType.USER_KEYWORD] segment with the item it belongs to. */
+data class KeywordSegRow(val segId: Long, val itemId: Long, val sourceKey: String, val displayName: String, val text: String?, val embedded: Boolean)
+
+data class KeywordItemRow(val itemId: Long, val sourceKey: String, val displayName: String)

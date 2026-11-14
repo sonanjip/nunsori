@@ -158,7 +158,7 @@ interface FaceDao {
     /** Photos of a person, newest first. */
     @Query(
         """SELECT DISTINCT i.itemId, i.kind, i.uri, i.displayName, i.folderKey, i.title, i.sizeBytes, i.width, i.height,
-           i.durationMs, i.pageCount, i.status, i.indexedAt, NULL AS thumbPath
+           i.durationMs, i.pageCount, i.status, i.indexedAt, NULL AS thumbPath, i.sourceKey
            FROM items i JOIN faces f ON f.itemId = i.itemId
            WHERE f.personId = :personId ORDER BY COALESCE(i.dateTaken, i.modifiedAt) DESC""",
     )

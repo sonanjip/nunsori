@@ -13,6 +13,7 @@ import com.lsa.app.data.db.MIGRATION_4_5
 import com.lsa.app.data.db.MIGRATION_5_6
 import com.lsa.app.data.db.MIGRATION_6_7
 import com.lsa.app.data.db.MIGRATION_7_8
+import com.lsa.app.data.db.MIGRATION_9_10
 import com.lsa.app.ml.embedding.Quant
 import com.lsa.app.ml.embedding.VectorMath
 import org.junit.Assert.assertArrayEquals
@@ -86,6 +87,15 @@ class MigrationTest {
             assertEquals("dubai.jpg", c.getString(0)); assertEquals(25.2, c.getDouble(1), 0.0001)
             assertTrue("existing rows get place = NULL until the backfill runs", c.isNull(2))
         }
+    }
+
+    @Test fun v9ToV10AddsUserKeywordsUniquePerFile() {
+        helper.createDatabase("mig910", 9).apply { execSQL(itemV2); close() }
+        val db = helper.runMigrationsAndValidate("mig910", 10, true, MIGRATION_9_10)
+        db.query("SELECT COUNT(*) FROM items").use { c -> c.moveToFirst(); assertEquals("index rows kept", 1, c.getInt(0)) }
+        db.execSQL("INSERT INTO user_keywords (sourceKey, text, createdAt) VALUES ('ms:image:7', 'trip', 1)")
+        db.execSQL("INSERT OR IGNORE INTO user_keywords (sourceKey, text, createdAt) VALUES ('ms:image:7', 'trip', 2)")
+        db.query("SELECT COUNT(*) FROM user_keywords").use { c -> c.moveToFirst(); assertEquals(1, c.getInt(0)) }
     }
 
     /** Fails when an entity changes without a migration: every exported schema must reach the latest version. */

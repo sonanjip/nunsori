@@ -27,6 +27,8 @@ data class SearchHit(
     val snippet: String?,
     /** Which metadata matched the query (place, file name or title), if any. */
     val metaMatch: MetaMatch? = null,
+    /** One of the user's own keywords ("My keywords") is what matched. */
+    val userKeyword: Boolean = false,
 )
 
 enum class MetaMatch { PLACE, NAME }
@@ -196,6 +198,7 @@ class SearchEngine(
                 exactKeyword = a.exact || a.metaExact,
                 snippet = a.snippet,
                 metaMatch = if (a.metaScore > 0f) a.metaField else null,
+                userKeyword = (a.kwScore > 0f && a.kwRef?.type == SegmentType.USER_KEYWORD) || a.best?.type == SegmentType.USER_KEYWORD,
             )
         }.filter { it.score > 0f }
             .let { all ->

@@ -45,7 +45,33 @@ class IndexingController(
             tagged.any { it.state == WorkInfo.State.RUNNING }
     }
 
+    private val _pending = MutableStateFlow(PendingState())
+    /** Files still to be indexed (the index screen's "Waiting" tab); refreshed by [refreshPending] and every run. */
+    val pending: StateFlow<PendingState> = _pending.asStateFlow()
+
     internal fun update(p: IndexProgress) { _progress.value = p }
+
+    internal fun publishPlan(plan: IndexPlan, keys: (ItemKind) -> String) {
+        _pending.value = PendingState(PendingReasons.files(plan, keys), System.currentTimeMillis(), loaded = true)
+    }
+
+    /**
+     * Works out the waiting files now (model-free [IndexRunner.sync]). While a run holds the lock, that run's own
+     * plan is shown instead.
+     */
+    suspend fun refreshPending() {
+        val folders = folderSpecs()
+        if (!hasAnyStorageAccess(context) || folders.isEmpty()) {
+            _pending.value = PendingState(loaded = true, at = System.currentTimeMillis()); return
+        }
+        if (!runLock.tryLock()) return
+        try {
+            val keys = pipelineKeys()
+            publishPlan(runner.sync(folders, enabledKinds(), keys), keys)
+        } finally {
+            runLock.unlock()
+        }
+    }
     internal fun resetStop() { stopRequested = false }
 
     /** Kinds that are indexed right now. */
@@ -106,7 +132,8 @@ class IndexingController(
         val folders = folderSpecs()
         if (folders.isEmpty() || !runLock.tryLock()) return
         try {
-            runner.sync(folders, enabledKinds(), pipelineKeys())
+            val keys = pipelineKeys()
+            publishPlan(runner.sync(folders, enabledKinds(), keys), keys)
         } finally {
             runLock.unlock()
         }
